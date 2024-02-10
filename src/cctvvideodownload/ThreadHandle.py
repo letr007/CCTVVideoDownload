@@ -35,6 +35,8 @@ class ThreadHandle(QObject):
         self.dialog = Ui_Dialog()
         self.dialog.setupUi(self.dialog_ui)
         # self.dialog_ui.setWindowModality()
+        self.dialog_ui.closeEvent = self.closeEvent  # 将处理关闭事件的方法绑定到窗口关闭事件
+        self.download_completed = False  # 初始化下载完成标记为False
         self.dialog_ui.show()
         # 重置信息
         self.dialog.progressBar_all.setValue(0)
@@ -81,14 +83,28 @@ class ThreadHandle(QObject):
         '''派发新任务'''
         # 每创建一个新线程即为一个下载任务完成，更新进度，总完成任务+1
         self.update_all_value() 
-        if len(self.info_list) != 0:
-            self.worker.transfer(self.info_list[0])
-            del self.info_list[0]
-            self.worker.start()
-        else:
-            self.dialog_ui.close() # 关闭窗体
-            self.download_finish.emit(True) # 发送信号
-        
+        if self.dialog_ui.isVisible(): # 此处加入对窗体可视的判定，避免重复的信号启动concat
+            if len(self.info_list) != 0: # 对任务列表进行判断
+                self.worker.transfer(self.info_list[0])
+                del self.info_list[0]
+                self.worker.start()
+            else:
+                # 关闭窗体
+                self.download_completed = True # 设置完成信号
+                self.dialog_ui.close() # 关闭窗体
+                self.download_finish.emit(True) # 发送信号
+
+    def closeEvent(self, event):
+        if self.dialog_ui.isVisible():
+            if not self.download_completed: # 如果没有完成
+                event.ignore()  # 忽略窗口的关闭事件
+                self.worker.quit()  # 通知线程要退出
+                self.worker.stop_thread() # 停止线程
+                self.worker.wait()  # 等待线程退出
+                print(self.worker.state)
+                self.dialog_ui.close()  # 关闭窗体
+                self.download_finish.emit(False)  # 发送取消信号
+            
     
     ##############################################################################################
     #                                     现在的多线程                                             #
@@ -270,6 +286,7 @@ class DownloadVideo(QThread):
         self.state = None
         self.url = None
         self.value = 0
+        self.stop = False
 
         path = "C:\\"
         if not os.path.exists(f"{path}\\ctvd_tmp"):
@@ -284,40 +301,46 @@ class DownloadVideo(QThread):
         self.url = data_list[2]
         self.value = int(data_list[3])
 
-    def run(self):
-        response = requests.get(self.url, stream=True)
-        chunk_size = 1024 * 1024
-        size = 0
-        self.state = "下载中"
-        
-        try:
-            content_size = int(response.headers['content-length']) # 获取content-length字段
-            # print("content_size:",content_size)
-            path = "C:\\" # 注意!这个路径是临时文件存放路径,别傻fufu去传参!
-            if response.status_code == 200:
-                file_path = f"{path}\\ctvd_tmp\\{self.thread_logo}.ts"
-                with open(file_path, "wb") as f:
-                    for data in response.iter_content(chunk_size=chunk_size): # 以chunk取出数据
-                        # print('-'*10)
-                        # print("data:",len(data),"\nchunk:")
-                        f.write(data) # 写入
-                        # 计算百分比
-                        size += len(data)
-                        # print("size:",size)
-                        value = size * 100 / content_size
-                        # print("value:",value)
-                        # print('-'*10)
-                        self.value = value # 将进度传给属性
-                        # 生成回传信息列表
-                        data_list = [str(self.thread_logo), self.state, self.url, str(self.value)]
-                        self.info.emit(data_list) # 回传参数
+    def stop_thread(self):
+        self.stop = True
 
-            self.state = "完成"
-            data_list = [str(self.thread_logo), self.state, self.url, str(self.value)]
-            self.info.emit(data_list)
-        except Exception as e:
-            # 异常向上抛出，交由上层类处理
-            raise
+    def run(self):
+        while not self.stop:
+            response = requests.get(self.url, stream=True)
+            chunk_size = 1024 * 1024
+            size = 0
+            self.state = "下载中"
+
+            print("Thread running...")
+            
+            try:
+                content_size = int(response.headers['content-length']) # 获取content-length字段
+                # print("content_size:",content_size)
+                path = "C:\\" # 注意!这个路径是临时文件存放路径,别傻fufu去传参!
+                if response.status_code == 200:
+                    file_path = f"{path}\\ctvd_tmp\\{self.thread_logo}.ts"
+                    with open(file_path, "wb") as f:
+                        for data in response.iter_content(chunk_size=chunk_size): # 以chunk取出数据
+                            # print('-'*10)
+                            # print("data:",len(data),"\nchunk:")
+                            f.write(data) # 写入
+                            # 计算百分比
+                            size += len(data)
+                            # print("size:",size)
+                            value = size * 100 / content_size
+                            # print("value:",value)
+                            # print('-'*10)
+                            self.value = value # 将进度传给属性
+                            # 生成回传信息列表
+                            data_list = [str(self.thread_logo), self.state, self.url, str(self.value)]
+                            self.info.emit(data_list) # 回传参数
+
+                self.state = "完成"
+                data_list = [str(self.thread_logo), self.state, self.url, str(self.value)]
+                self.info.emit(data_list)
+            except Exception as e:
+                # 异常向上抛出，交由上层类处理
+                raise
 
             
 class ConcatThread(QThread):

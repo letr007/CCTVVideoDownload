@@ -132,7 +132,7 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
         # 槽绑定
         self.dialog_setting.pushButton_open.clicked.connect(self.open_file_save_path)
         self.dialog_setting.buttonBox.accepted.connect(self.save_settings)
-        # 锁
+        # 锁上锁上
         self.dialog_setting.spinBox.setEnabled(False)
         self.dialog_setting.radioButton_mp4.setEnabled(False)
             
@@ -166,6 +166,7 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
         self.movie = QMovie(":/resources/afraid.gif")
         self.dialog_about.label_img.setMovie(self.movie)
         self.movie.setScaledSize(QSize(100,100))
+        self.about_base.setModal(True)
         self.about_base.show()
         self.movie.start()
         self.dialog_about.label_link.setOpenExternalLinks(True)
@@ -280,6 +281,8 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
             self.work.transfer(self.choose_name, self.SETTINGS["file_save_path"])
             self.work.start()
             self.work.concat_finish.connect(self.concat_finish)
+        else:
+            self.output("INFO", "视频下载", "下载已取消")
 
     def concat_finish(self, name:str) -> None:
         '''合并完成'''
