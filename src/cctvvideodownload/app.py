@@ -36,7 +36,8 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
     "settings":{
         "file_save_path":"C:\\Video",
         "threading_num":"1",
-        "whether_transcode":"False"
+        "whether_transcode":"False",
+        "download_finish":"True"
     },
     "programme": {
                 
@@ -66,10 +67,13 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
         self.pushButton_Download.setEnabled(False)
         self.pushButton_FlashList.setEnabled(False)
 
-        # 检查配置文件
+        # 检查
         self.check_config()
-
+        
         self.show()
+
+        self.check_download()
+
 
     # def main(self) -> None:
     #     # 菜单栏动作
@@ -108,11 +112,53 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
         try:
             with open("./config.json", "r", encoding='utf-8') as f:
                 config = json.load(f) # 将文件解析为字典
+                # 赋值到属性
                 self.SETTINGS = config["settings"]
+                self.downloading_urls = config["downloading_urls"]
         except Exception as e:
             self.output("ERROR", "加载配置文件时出现错误\n错误详情:%s"% e)
 
-        
+    def update_config(self) -> None:
+        '''更新配置文件
+           SETTINGS属性和DOWNLOADING_URLS属性'''
+        import json
+        with open("./config.json", "r", encoding='utf-8') as f:
+            config = json.load(f) # 将文件解析为字典
+        # 将新值赋值到JSON字典
+        config["settings"] = self.SETTINGS
+        config["downloading_urls"] = dict(self.DOWNLOADING_URLS)
+        # 写入文件
+        with open("./config.json", "w+", encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+
+    def check_download(self)  -> None:
+        '''检查是否需要继续下载'''
+        if self.SETTINGS["download_finish"] == "False":
+            self.output("INFO","下载检查", "检测到有未完成的下载")
+
+            import re
+            path = "C:/"
+
+            # 获取文件列表
+            file_list = os.listdir("%s/ctvd_tmp" % path)
+            ts_files = [i for i in file_list if re.match(r"\d+\.ts", i)]
+            ts_files = sorted(ts_files, key=lambda x: int(x.split('.')[0]))
+            # print(ts_files)
+            self.ts_files = ts_files
+            # 显示一个消息框
+            self.msg = QtWidgets.QMessageBox()
+            self.msg.setText("检测到有未完成的下载，是否继续？")
+            self.msg.setWindowTitle("下载检查")
+            self.msg.setStandardButtons(QtWidgets.QMessageBox.Ok|QtWidgets.QMessageBox.Cancel)
+            self.msg.show()
+            self.msg.setModal(True)
+            self.msg.buttonClicked.connect(self.on_msg_clicked)
+
+    def on_msg_clicked(self, button) -> None:
+        if button == QtWidgets.QMessageBox.Ok:
+            downloading_urls = self.DOWNLOADING_URLS
+
+
         
     def setting(self) -> None:
         '''设置项'''
@@ -275,6 +321,10 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
     def concat(self, finish:bool) -> None:
         '''合并视频方法'''
         if finish:
+            # 将标识符设置为True，代表此次下载已经完成
+            self.SETTINGS["download_finish"] = "True"
+
+
             self.output("OKEY","视频下载","下载完成!")
             self.output("INFO","视频合并","开始合并...")
             self.work = ConcatThread()
