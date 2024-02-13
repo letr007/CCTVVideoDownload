@@ -39,6 +39,7 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
         "whether_transcode":"False",
         "download_finish":"True"
     },
+    "downloading_urls":[],
     "programme": {
                 
     }
@@ -100,21 +101,24 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
     def check_config(self) -> None:
         '''检查配置文件并添加到属性settings'''
         import json
+        # 检查配置文件是否存在
         if not os.path.exists("./config.json"):
             self.output("INFO", "配置检查", "未找到配置文件")
             self.output("INFO", "配置检查", "重建配置文件...")
             try:
+                # 创建配置文件
                 with open("config.json", "w+") as f:
                     f.write(self._DEFAULT_SETTINGS)
                 self.output("OKEY", "配置检查", "配置文件重建完成")
             except Exception as e:
                 self.output("ERROR", "重建配置文件时出现错误\n错误详情:%s"% e)
+        # 加载配置文件
         try:
             with open("./config.json", "r", encoding='utf-8') as f:
                 config = json.load(f) # 将文件解析为字典
                 # 赋值到属性
                 self.SETTINGS = config["settings"]
-                self.downloading_urls = config["downloading_urls"]
+                self.DOWNLOADING_URLS = config["downloading_urls"]
         except Exception as e:
             self.output("ERROR", "加载配置文件时出现错误\n错误详情:%s"% e)
 
@@ -126,13 +130,16 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
             config = json.load(f) # 将文件解析为字典
         # 将新值赋值到JSON字典
         config["settings"] = self.SETTINGS
-        config["downloading_urls"] = dict(self.DOWNLOADING_URLS)
+        config["downloading_urls"] = self.DOWNLOADING_URLS
+        # 注:download_finsih属于SETTINGS属性
+
         # 写入文件
         with open("./config.json", "w+", encoding='utf-8') as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
 
     def check_download(self)  -> None:
         '''检查是否需要继续下载'''
+        # 查验是否有未完成的下载,即download_finish属性为False
         if self.SETTINGS["download_finish"] == "False":
             self.output("INFO","下载检查", "检测到有未完成的下载")
 
@@ -155,8 +162,14 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
             self.msg.buttonClicked.connect(self.on_msg_clicked)
 
     def on_msg_clicked(self, button) -> None:
-        if button == QtWidgets.QMessageBox.Ok:
+        if button.text() == "OK":
             downloading_urls = self.DOWNLOADING_URLS
+            for i in self.ts_files:
+                del downloading_urls[self.ts_files.index(i)]
+                # 可能会抛出ValueError
+            # 开始下载
+            self.continue_thread = ThreadHandle()
+            self.continue_thread.continue_download(downloading_urls)
 
 
         
@@ -247,6 +260,7 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
         '''接受信号，表格'''
         choose_item = self.tableWidget_List.item(r,0).text()
         self.output("INFO","视频信息","已选中 %s" %choose_item)
+        # ???
         self.dl_index = r + 1
         self.choose_name = choose_item
 
@@ -324,9 +338,9 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
             # 将标识符设置为True，代表此次下载已经完成
             self.SETTINGS["download_finish"] = "True"
 
-
             self.output("OKEY","视频下载","下载完成!")
             self.output("INFO","视频合并","开始合并...")
+            # 合并视频
             self.work = ConcatThread()
             self.work.transfer(self.choose_name, self.SETTINGS["file_save_path"])
             self.work.start()
@@ -337,6 +351,7 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
     def concat_finish(self, name:str) -> None:
         '''合并完成'''
         self.output("OKEY","视频合并","视频 %s 合并完成!" % name)
+        # 恢复按钮
         self.pushButton_Download.setEnabled(True)
 
     def download_start(self) -> None:
@@ -345,8 +360,23 @@ class CCTVVideoDownload(QtWidgets.QMainWindow, Ui_MainWindow, DownloadDialog, Se
         self.pushButton_Download.setEnabled(False)
         try:
             self.thread = ThreadHandle()
+            # 我当时是处于什么精神状态才这么写???
             self.thread.transfer(self.dict1[self.dl_index][1], 10, self.SETTINGS["file_save_path"])
             self.thread.main()
+            # 设置标识符,表示下载未完成
+            self.SETTINGS["download_finish"] = "False"
+            # 屎+1,以下来自ThreadHandle
+            # 获得视频链接
+            vd = VideoDownload()
+            Vinfo = vd.GetHttpVideoInfo(self.dict1[self.dl_index][1])
+            # self.urls = vd.GetDownloadUrls(Vinfo)
+            # 由于央视更新，改用M3U8下载通道
+            urls = vd.GetM3U8Urls(Vinfo)
+
+            self.DOWNLOADING_URLS = urls
+            # 更新配置文件
+            self.update_config()
+            # 连接信号
             self.thread.download_finish.connect(self.concat)
         except Exception as e:
             self.output("ERROR","在下载视频时出现错误\n错误详情:%s"% e)

@@ -61,7 +61,7 @@ class VideoDownload():
         # print(urls)
         return urls
     
-    def GetM3U8Urls(self, VideoInfo:list) -> None:
+    def GetM3U8Urls(self, VideoInfo:list) -> list:
         '''
         '''
         # import json

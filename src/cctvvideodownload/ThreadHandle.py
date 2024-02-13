@@ -79,6 +79,53 @@ class ThreadHandle(QObject):
         self.worker.finished.connect(self._new_work)
         self._new_work()
 
+    def continue_download(self, Urls:list) -> None:
+        '''继续下载'''
+        # 创建显示窗体
+        self.dialog_ui = QtWidgets.QDialog()
+        self.dialog = Ui_Dialog()
+        self.dialog.setupUi(self.dialog_ui)
+        # self.dialog_ui.setWindowModality()
+        self.dialog_ui.closeEvent = self.closeEvent  # 将处理关闭事件的方法绑定到窗口关闭事件
+        self.download_completed = False  # 初始化下载完成标记为False
+        self.dialog_ui.show()
+        # 重置信息
+        self.dialog.progressBar_all.setValue(0)
+        self.dialog.tableWidget.setColumnWidth(0, 30)
+        self.dialog.tableWidget.setColumnWidth(1, 55)
+        self.dialog.tableWidget.setColumnWidth(2, 155)
+        self.dialog.tableWidget.setColumnWidth(3, 48)
+        # 获得视频链接
+        self.urls = Urls
+
+        self.dialog.tableWidget.setRowCount(len(self.urls))
+
+        # list1 = [["1","等待","https://www.cctv.com/aa/aaa/aa/bb","0"],
+        #          ["2","完成","https://www.cctv.com/aa/aaa/aa/bb","100"],
+        #          ["3","下载中","https://www.cctv.com/aa/aaa/aa/bb","36"]]
+       
+        # 生成信息列表
+        num = 1
+        self.info_list = []
+        for i in self.urls:
+            info = [str(num), "等待", i, "0"]
+            num += 1
+            self.info_list.append(info)
+
+        self.display(self.info_list)
+
+        self.task_list = self.split_list(self.info_list, self.Threading_num)
+        self.all_value = 0
+        self.finish_value = len(self.info_list)
+        # 多线程
+        # self.start_download(self.info_list, self.Threading_num)
+        # 暂时不再使用多线程
+        self.worker = DownloadVideo()
+        self.worker.info.connect(self.callback)
+        self.worker.finished.connect(self._new_work)
+        self._new_work()
+
+
     def _new_work(self) -> None:
         '''派发新任务'''
         # 每创建一个新线程即为一个下载任务完成，更新进度，总完成任务+1
@@ -335,9 +382,13 @@ class DownloadVideo(QThread):
                             data_list = [str(self.thread_logo), self.state, self.url, str(self.value)]
                             self.info.emit(data_list) # 回传参数
 
+                        
+
                 self.state = "完成"
                 data_list = [str(self.thread_logo), self.state, self.url, str(self.value)]
                 self.info.emit(data_list)
+                # print("stop")
+                # self.stop = True
             except Exception as e:
                 # 异常向上抛出，交由上层类处理
                 raise
